@@ -1,0 +1,47 @@
+# Секретні дані
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Віртуальне середовище
+venv/
+.venv/
+env/
+
+# Логи і кеш
+logs/
+*.log
+data/cache/
+data/debug/
+
+# Редактори
+.vscode/
+.idea/
+
+# Тимчасові файли Windows
+Thumbs.db
+Desktop.ini
+Новый текстовый документ.txt
+
+# Звіти та результати аналізу
+reports/
+*.csv
+
+# Локальні тестові HTML-файли
+calendar.html
+data/*.html
+importers/data/*.html
+
+# Тестові та допоміжні скрипти
+test_*.py
+analyze_references.py
+validate_all_readings.py
+database_old.py
+
+# Зображення та інші файли, які не потрібні боту
+Аватар до Бота.png
