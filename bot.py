@@ -216,6 +216,23 @@ async def start_handler(message: Message) -> None:
     )
 
 
+@router.message(Command("help"))
+async def help_handler(message: Message) -> None:
+    await message.answer(
+        "📖 <b>GodSearchBot — довідка</b>\n\n"
+        "Доступні команди:\n\n"
+        "/start — головне меню\n"
+        "/today — читання на сьогодні\n"
+        "/date YYYY-MM-DD — читання на потрібну дату\n"
+        "/search — пошук по Біблії\n"
+        "/favorites — моє обране\n"
+        "/help — ця довідка\n\n"
+        "Також усі функції доступні через кнопки головного меню.",
+        parse_mode="HTML",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
 @router.message(Command("subscribe"))
 @router.message(F.text == "🔔 Підписатися")
 async def subscribe_handler(message: Message) -> None:
