@@ -130,29 +130,32 @@ class MgceImporter:
     ):
         self.year = year
 
-        self.html_file = (
-            html_file
-            if html_file is not None
-            else PROJECT_ROOT / "calendar.html"
-        )
+        self.html_file = html_file
 
         self.database = ReadingsDatabase()
 
     def load_html(self) -> BeautifulSoup:
-        if not self.html_file.exists():
-            raise FileNotFoundError(
-                f"Не знайдено HTML-файл календаря: {self.html_file}"
+        if self.html_file is not None and self.html_file.exists():
+            html = self.html_file.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        else:
+            from urllib.request import Request, urlopen
+
+            url = "https://mgce.uz.ua/tserkovnij-kalendar/"
+            request = Request(
+                url,
+                headers={"User-Agent": "GodSearchBot/1.0"},
             )
 
-        html = self.html_file.read_text(
-            encoding="utf-8",
-            errors="replace",
-        )
+            with urlopen(request, timeout=30) as response:
+                html = response.read().decode(
+                    "utf-8",
+                    errors="replace",
+                )
 
-        return BeautifulSoup(
-            html,
-            "html.parser",
-        )
+        return BeautifulSoup(html, "html.parser")
 
     def find_months(
         self,
@@ -741,28 +744,65 @@ class MgceImporter:
         calendar_date = day_data["date"]
         readings = day_data["readings"]
 
-        self.database.delete_date(
-            calendar_date
-        )
-
-        saved_count = 0
-
-        for reading in readings:
-            self.database.save(
-                date=calendar_date,
-                reading_type=reading["reading_type"],
-                reference=reading["reference"],
-                position=reading["position"],
+        if not readings:
+            raise ValueError(
+                f"No readings found for {calendar_date}. "
+                "Existing data was not modified."
             )
 
-            saved_count += 1
+        prepared = [
+            (
+                reading["reading_type"],
+                reading["reference"],
+                reading["position"],
+            )
+            for reading in readings
+        ]
 
-        return saved_count
+        return self.database.replace_date(
+            calendar_date,
+            prepared,
+        )
 
     def import_year(
         self,
     ) -> dict[str, Any]:
         calendar_days = self.parse_year()
+
+        weekday_names = {
+            0: "\u043f\u043d",
+            1: "\u0432\u0442",
+            2: "\u0441\u0440",
+            3: "\u0447\u0442",
+            4: "\u043f\u0442",
+            5: "\u0441\u0431",
+            6: "\u043d\u0434",
+        }
+
+        weekday_mismatches = []
+
+        for day_data in calendar_days:
+            calendar_date = date.fromisoformat(day_data["date"])
+            actual = str(day_data["weekday"]).strip().lower()
+            expected = weekday_names[calendar_date.weekday()]
+
+            if actual != expected:
+                weekday_mismatches.append(
+                    (day_data["date"], expected, actual)
+                )
+
+        if len(weekday_mismatches) > 2:
+            raise RuntimeError(
+                f"Calendar year validation failed: "
+                f"{len(weekday_mismatches)} weekday mismatches."
+            )
+
+        for calendar_date, expected, actual in weekday_mismatches:
+            print(
+                f"WARNING: {calendar_date}: "
+                f"expected {expected}, found {actual}. "
+                "Readings will be preserved."
+            )
 
         if not calendar_days:
             raise RuntimeError(
@@ -781,37 +821,47 @@ class MgceImporter:
                 f"отримано: {len(calendar_days)}."
             )
 
-        saved_readings = 0
-        days_without_readings: list[str] = []
-        errors: list[str] = []
+        prepared = []
+        seen_dates = set()
 
         for day_data in calendar_days:
             calendar_date = day_data["date"]
 
-            try:
-                saved_for_day = self.save_day(
-                    day_data
+            if calendar_date in seen_dates:
+                raise RuntimeError(
+                    f"Duplicate calendar date: {calendar_date}"
                 )
 
-                saved_readings += saved_for_day
+            seen_dates.add(calendar_date)
 
-                if saved_for_day == 0:
-                    days_without_readings.append(
-                        calendar_date
+            if not day_data["readings"]:
+                raise RuntimeError(
+                    f"No readings for {calendar_date}"
+                )
+
+            for reading in day_data["readings"]:
+                prepared.append(
+                    (
+                        calendar_date,
+                        reading["reading_type"],
+                        reading["reference"],
+                        reading["position"],
                     )
-
-            except Exception as error:
-                errors.append(
-                    f"{calendar_date}: {error}"
                 )
+
+        saved_readings = self.database.replace_year(
+            self.year,
+            prepared,
+        )
 
         return {
             "days_processed": len(calendar_days),
             "readings_saved": saved_readings,
-            "days_without_readings": days_without_readings,
-            "errors": errors,
+            "days_without_readings": [],
+            "errors": [],
             "database_count": self.database.count(),
         }
+
 
 
 def reading_type_name(
@@ -856,8 +906,24 @@ def main() -> None:
     print("=" * 50)
     print()
 
+    import argparse
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, default=None)
+    args = parser.parse_args()
+
+    calendar_year = (
+        args.year
+        if args.year is not None
+        else datetime.now(ZoneInfo("Europe/Kyiv")).year
+    )
+
+    print(f"Calendar year: {calendar_year}")
+
     importer = MgceImporter(
-        year=2026
+        year=calendar_year
     )
 
     try:
@@ -914,7 +980,7 @@ def main() -> None:
 
     print_database_day(
         importer.database,
-        "2026-01-01",
+        f"{calendar_year}-01-01",
     )
 
     print_database_day(

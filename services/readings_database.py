@@ -211,6 +211,63 @@ class ReadingsDatabase:
 
         return len(prepared)
 
+    def replace_year(
+        self,
+        year: int,
+        readings: Iterable[tuple[str, int, str, int]],
+    ) -> int:
+        if not isinstance(year, int) or not 1 <= year <= 9998:
+            raise ValueError("Invalid calendar year.")
+
+        prepared = []
+        seen = set()
+
+        for calendar_date, reading_type, reference, position in readings:
+            self.validate_reading(
+                calendar_date,
+                reading_type,
+                reference,
+                position,
+            )
+
+            calendar_date = calendar_date.strip()
+            reference = reference.strip()
+
+            if not calendar_date.startswith(f"{year:04d}-"):
+                raise ValueError(
+                    f"Reading belongs to another year: {calendar_date}"
+                )
+
+            key = (calendar_date, reading_type, position)
+
+            if key in seen:
+                raise ValueError(f"Duplicate reading: {key}")
+
+            seen.add(key)
+            prepared.append(
+                (calendar_date, reading_type, reference, position)
+            )
+
+        if not prepared:
+            raise ValueError("Cannot replace year with empty readings.")
+
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM readings WHERE date >= ? AND date < ?",
+                (f"{year:04d}-01-01", f"{year + 1:04d}-01-01"),
+            )
+            connection.executemany(
+                """
+                INSERT INTO readings (
+                    date, reading_type, reference, position
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                prepared,
+            )
+
+        return len(prepared)
+
     def delete_date(self, date: str) -> int:
         with self.connect() as connection:
             cursor = connection.execute(
