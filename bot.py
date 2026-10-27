@@ -19,6 +19,7 @@ from services.favorites_service import FavoritesService
 from services.message_service import MessageService
 from services.readings_service import ReadingsService
 from services.search_service import BibleSearchService
+from services.calendar_sync_service import weekly_calendar_sync_loop
 from services.scheduler_service import daily_broadcast_loop
 from services.subscription_service import SubscriptionService
 from ui.keyboards import (
@@ -644,15 +645,21 @@ async def run_bot() -> None:
         )
     )
 
+    calendar_sync_task = asyncio.create_task(
+        weekly_calendar_sync_loop()
+    )
+
     try:
         await dispatcher.start_polling(bot)
     finally:
         scheduler_task.cancel()
+        calendar_sync_task.cancel()
 
-        try:
-            await scheduler_task
-        except asyncio.CancelledError:
-            pass
+        await asyncio.gather(
+            scheduler_task,
+            calendar_sync_task,
+            return_exceptions=True,
+        )
 
         await bot.session.close()
 
