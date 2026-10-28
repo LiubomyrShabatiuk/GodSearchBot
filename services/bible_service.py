@@ -252,5 +252,32 @@ class BibleService:
             raise LookupError(f"Текст для «{reference}» не знайдено")
         return "\n".join(lines)
 
+
+    def get_psalm(self, number: int) -> str:
+        """Return all verses of a psalm."""
+        if not isinstance(number, int) or isinstance(number, bool):
+            raise ValueError("Invalid psalm number")
+        if not 1 <= number <= 150:
+            raise ValueError("Invalid psalm number")
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT verse, text
+                FROM verses
+                WHERE book_id = 19 AND chapter = ?
+                ORDER BY verse
+                """,
+                (number,),
+            ).fetchall()
+
+        if not rows:
+            raise LookupError("Psalm not found")
+
+        return "\n".join(
+            f"{row['verse']}. {row['text']}"
+            for row in rows
+        )
+
     def format_passage(self, reference: str) -> str:
         return f"📜 {reference}\n\n{self.get_passage(reference)}"

@@ -22,6 +22,10 @@ from services.search_service import BibleSearchService
 from services.calendar_sync_service import weekly_calendar_sync_loop
 from services.scheduler_service import daily_broadcast_loop
 from services.subscription_service import SubscriptionService
+from ui.psalter_keyboards import (
+    psalter_list_keyboard,
+    psalter_navigation_keyboard,
+)
 from ui.keyboards import (
     MAIN_KEYBOARD,
     favorites_list_keyboard,
@@ -286,6 +290,21 @@ async def unsubscribe_handler(message: Message) -> None:
         )
 
 
+
+@router.message(Command("psalter"))
+@router.message(F.text == "📖 Псалтир")
+async def psalter_handler(message: Message, state: FSMContext) -> None:
+    """Open the Psalter chapter list."""
+    await state.clear()
+    await message.answer(
+        "\U0001f4d6 \u041f\u0441\u0430\u043b\u0442\u0438\u0440\n\n"
+        "\u041e\u0431\u0435\u0440\u0456\u0442\u044c "
+        "\u043f\u0441\u0430\u043b\u043e\u043c "
+        "\u0434\u043b\u044f \u0447\u0438\u0442\u0430\u043d\u043d\u044f:",
+        reply_markup=psalter_list_keyboard(0),
+    )
+
+
 @router.message(Command("search"))
 async def search_command_handler(message: Message, state: FSMContext) -> None:
     parts = (message.text or "").split(maxsplit=1)
@@ -422,6 +441,76 @@ async def choose_date_handler(message: Message) -> None:
 @router.message(F.text.regexp(DATE_PATTERN))
 async def plain_date_handler(message: Message) -> None:
     await send_references(message, message.text or "")
+
+
+
+@router.callback_query(F.data.startswith("psalter_list:"))
+async def psalter_list_callback(callback: CallbackQuery) -> None:
+    """Switch between Psalter list pages."""
+    try:
+        page = int((callback.data or "").split(":", 1)[1])
+        keyboard = psalter_list_keyboard(page)
+
+        if callback.message:
+            await callback.message.edit_text(
+                "\U0001f4d6 \u041f\u0441\u0430\u043b\u0442\u0438\u0440\n\n"
+                "\u041e\u0431\u0435\u0440\u0456\u0442\u044c "
+                "\u043f\u0441\u0430\u043b\u043e\u043c "
+                "\u0434\u043b\u044f \u0447\u0438\u0442\u0430\u043d\u043d\u044f:",
+                reply_markup=keyboard,
+            )
+
+        await callback.answer()
+
+    except (ValueError, TypeError):
+        await callback.answer(
+            "Invalid Psalter page.",
+            show_alert=True,
+        )
+    except Exception:
+        logger.exception("Psalter list navigation failed")
+        await callback.answer(
+            "Could not open Psalter page.",
+            show_alert=True,
+        )
+
+
+
+@router.callback_query(F.data.startswith("psalter_open:"))
+async def psalter_open_callback(callback: CallbackQuery) -> None:
+    """Open a psalm and provide navigation."""
+    try:
+        number = int((callback.data or "").split(":", 1)[1])
+
+        if not 1 <= number <= 150:
+            raise ValueError("Invalid psalm number")
+
+        text = bible_service.get_psalm(number)
+        title = f"\U0001f4d6 \u041f\u0441\u0430\u043b\u043e\u043c {number}"
+        full_text = f"{title}\n\n{text}"
+
+        keyboard = psalter_navigation_keyboard(number)
+
+        if callback.message:
+            await send_long_message(
+                callback.message,
+                full_text,
+                reply_markup=keyboard,
+            )
+
+        await callback.answer()
+
+    except (ValueError, TypeError):
+        await callback.answer(
+            "Invalid psalm number.",
+            show_alert=True,
+        )
+    except Exception:
+        logger.exception("Failed to open psalm")
+        await callback.answer(
+            "Could not open psalm.",
+            show_alert=True,
+        )
 
 
 @router.callback_query(F.data.startswith("refs:"))
