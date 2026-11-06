@@ -15,6 +15,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from config import BOT_TOKEN, TELEGRAM_SAFE_MESSAGE_LENGTH
 from services.bible_service import BibleService
+from services.bible_navigation_service import BibleNavigationService
 from services.favorites_service import FavoritesService
 from services.message_service import MessageService
 from services.readings_service import ReadingsService
@@ -22,6 +23,12 @@ from services.search_service import BibleSearchService
 from services.calendar_sync_service import weekly_calendar_sync_loop
 from services.scheduler_service import daily_broadcast_loop
 from services.subscription_service import SubscriptionService
+from ui.bible_keyboards import (
+    bible_testament_keyboard,
+    bible_books_keyboard,
+    bible_chapters_keyboard,
+    bible_chapter_navigation_keyboard,
+)
 from ui.psalter_keyboards import (
     psalter_list_keyboard,
     psalter_navigation_keyboard,
@@ -40,6 +47,7 @@ router = Router()
 
 readings_service = ReadingsService()
 bible_service = BibleService()
+bible_navigation_service = BibleNavigationService()
 subscription_service = SubscriptionService()
 favorites_service = FavoritesService()
 search_service = BibleSearchService()
@@ -291,6 +299,21 @@ async def unsubscribe_handler(message: Message) -> None:
 
 
 
+
+
+@router.message(F.text == "\U0001f4da \u0411\u0456\u0431\u043b\u0456\u044f")
+async def bible_navigation_handler(
+    message: Message,
+    state: FSMContext,
+) -> None:
+    await state.clear()
+    await message.answer(
+        "\U0001f4da \u0411\u0456\u0431\u043b\u0456\u044f\n"
+        "\u041e\u0431\u0435\u0440\u0456\u0442\u044c \u0417\u0430\u0432\u0456\u0442:",
+        reply_markup=bible_testament_keyboard(),
+    )
+
+
 @router.message(Command("psalter"))
 @router.message(F.text == "📖 Псалтир")
 async def psalter_handler(message: Message, state: FSMContext) -> None:
@@ -442,6 +465,211 @@ async def choose_date_handler(message: Message) -> None:
 async def plain_date_handler(message: Message) -> None:
     await send_references(message, message.text or "")
 
+
+
+
+@router.callback_query(F.data.startswith("bible_testament:"))
+async def bible_testament_callback(callback: CallbackQuery) -> None:
+    testament = callback.data.split(":")[1]
+
+    if testament not in ("old", "new"):
+        await callback.answer("Invalid testament", show_alert=True)
+        return
+
+    books = bible_navigation_service.get_books(testament)
+
+    title = (
+        "\U0001f4dc \u0421\u0442\u0430\u0440\u0438\u0439 \u0417\u0430\u0432\u0456\u0442"
+        if testament == "old"
+        else "\u271d\ufe0f \u041d\u043e\u0432\u0438\u0439 \u0417\u0430\u0432\u0456\u0442"
+    )
+
+    await callback.message.edit_text(
+        title,
+        reply_markup=bible_books_keyboard(books, testament, 0),
+    )
+    await callback.answer()
+
+
+
+@router.callback_query(F.data.startswith("bible_books:"))
+async def bible_books_callback(callback: CallbackQuery) -> None:
+    try:
+        _, testament, page_text = callback.data.split(":")
+        page = int(page_text)
+
+        books = bible_navigation_service.get_books(testament)
+        keyboard = bible_books_keyboard(books, testament, page)
+
+    except (ValueError, TypeError):
+        await callback.answer("Invalid Bible page", show_alert=True)
+        return
+
+    title = (
+        "\U0001f4dc \u0421\u0442\u0430\u0440\u0438\u0439 \u0417\u0430\u0432\u0456\u0442"
+        if testament == "old"
+        else "\u271d\ufe0f \u041d\u043e\u0432\u0438\u0439 \u0417\u0430\u0432\u0456\u0442"
+    )
+
+    await callback.message.edit_text(
+        title,
+        reply_markup=keyboard,
+    )
+    await callback.answer()
+
+
+
+@router.callback_query(F.data == "bible_home")
+async def bible_home_callback(callback: CallbackQuery) -> None:
+    await callback.message.edit_text(
+        "\U0001f4da \u0411\u0456\u0431\u043b\u0456\u044f\n"
+        "\u041e\u0431\u0435\u0440\u0456\u0442\u044c \u0417\u0430\u0432\u0456\u0442:",
+        reply_markup=bible_testament_keyboard(),
+    )
+    await callback.answer()
+
+
+
+@router.callback_query(F.data.startswith("bible_book:"))
+async def bible_book_callback(callback: CallbackQuery) -> None:
+    try:
+        book_id = int(callback.data.split(":")[1])
+        chapters = bible_navigation_service.get_chapters(book_id)
+
+        keyboard = bible_chapters_keyboard(
+            book_id,
+            chapters,
+            0,
+        )
+
+    except (ValueError, TypeError):
+        await callback.answer("Invalid Bible book", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "\U0001f4d6 \u041e\u0431\u0435\u0440\u0456\u0442\u044c \u0440\u043e\u0437\u0434\u0456\u043b:",
+        reply_markup=keyboard,
+    )
+    await callback.answer()
+
+
+
+@router.callback_query(F.data.startswith("bible_chapters:"))
+async def bible_chapters_callback(callback: CallbackQuery) -> None:
+    try:
+        parts = callback.data.split(":")
+        if len(parts) != 3:
+            raise ValueError("Invalid callback format")
+
+        book_id = int(parts[1])
+        page = int(parts[2])
+
+        chapters = bible_navigation_service.get_chapters(book_id)
+        keyboard = bible_chapters_keyboard(
+            book_id,
+            chapters,
+            page,
+        )
+
+    except (ValueError, TypeError):
+        await callback.answer("Invalid chapter page", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "\U0001f4d6 \u041e\u0431\u0435\u0440\u0456\u0442\u044c \u0440\u043e\u0437\u0434\u0456\u043b:",
+        reply_markup=keyboard,
+    )
+    await callback.answer()
+
+
+
+@router.callback_query(F.data.startswith("bible_back_books:"))
+async def bible_back_books_callback(callback: CallbackQuery) -> None:
+    try:
+        parts = callback.data.split(":")
+        if len(parts) != 2:
+            raise ValueError("Invalid callback format")
+
+        book_id = int(parts[1])
+        bible_navigation_service.get_chapters(book_id)
+
+        testament = (
+            "new" if 40 <= book_id <= 66 else "old"
+        )
+
+        books = bible_navigation_service.get_books(testament)
+        book_ids = [book["book_id"] for book in books]
+
+        if book_id not in book_ids:
+            raise ValueError("Book not found in testament")
+
+        page = book_ids.index(book_id) // 10
+        keyboard = bible_books_keyboard(books, testament, page)
+
+    except (ValueError, TypeError):
+        await callback.answer("Invalid Bible book", show_alert=True)
+        return
+
+    title = (
+        "\U0001f4dc \u0421\u0442\u0430\u0440\u0438\u0439 \u0417\u0430\u0432\u0456\u0442"
+        if testament == "old"
+        else "\u271d\ufe0f \u041d\u043e\u0432\u0438\u0439 \u0417\u0430\u0432\u0456\u0442"
+    )
+
+    await callback.message.edit_text(
+        title,
+        reply_markup=keyboard,
+    )
+    await callback.answer()
+
+
+
+@router.callback_query(F.data.startswith("bible_chapter:"))
+async def bible_chapter_callback(callback: CallbackQuery) -> None:
+    try:
+        parts = (callback.data or "").split(":")
+        if len(parts) != 3:
+            raise ValueError("Invalid callback format")
+
+        book_id = int(parts[1])
+        chapter = int(parts[2])
+
+        chapters = bible_navigation_service.get_chapters(book_id)
+        text = bible_navigation_service.get_chapter_text(
+            book_id,
+            chapter,
+        )
+
+        keyboard = bible_chapter_navigation_keyboard(
+            book_id,
+            chapter,
+            len(chapters),
+        )
+
+        book_name = bible_navigation_service.get_book_name(book_id)
+        title = f"\U0001f4d6 {book_name} \u2014 \u0440\u043e\u0437\u0434\u0456\u043b {chapter}"
+        full_text = f"{title}\n\n{text}"
+
+        if callback.message:
+            await send_long_message(
+                callback.message,
+                full_text,
+                reply_markup=keyboard,
+            )
+
+        await callback.answer()
+
+    except (ValueError, TypeError, LookupError):
+        await callback.answer(
+            "Invalid Bible chapter",
+            show_alert=True,
+        )
+    except Exception:
+        logger.exception("Failed to open Bible chapter")
+        await callback.answer(
+            "Could not open Bible chapter",
+            show_alert=True,
+        )
 
 
 @router.callback_query(F.data.startswith("psalter_list:"))

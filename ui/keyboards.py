@@ -17,6 +17,7 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
         ],
         [KeyboardButton(text="📚 Повний текст на сьогодні")],
         [KeyboardButton(text="🔎 Пошук по Біблії")],
+        [KeyboardButton(text="📚 Біблія")],
         [KeyboardButton(text="📖 Псалтир")],
         [
             KeyboardButton(text="📅 Вибрати дату"),

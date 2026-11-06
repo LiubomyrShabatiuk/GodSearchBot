@@ -45,3 +45,6 @@ database_old.py
 
 # Зображення та інші файли, які не потрібні боту
 Аватар до Бота.png
+
+# Local Telegram token file
+Новий токен.txt
