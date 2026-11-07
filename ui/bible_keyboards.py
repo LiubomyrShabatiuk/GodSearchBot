@@ -1,4 +1,4 @@
-﻿"""Inline keyboards for Bible navigation."""
+"""Inline keyboards for Bible navigation."""
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -8,18 +8,23 @@ def bible_testament_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="\U0001f4dc \u0421\u0442\u0430\u0440\u0438\u0439 \u0417\u0430\u0432\u0456\u0442",
-                    callback_data="bible_testament:old",
+                    text="\u25b6\ufe0f \u041f\u0440\u043e\u0434\u043e\u0432\u0436\u0438\u0442\u0438 \u0447\u0438\u0442\u0430\u043d\u043d\u044f",
+                    callback_data="bible_continue",
                 )
             ],
             [
                 InlineKeyboardButton(
+                    text="\U0001f4dc \u0421\u0442\u0430\u0440\u0438\u0439 \u0417\u0430\u0432\u0456\u0442",
+                    callback_data="bible_testament:old",
+                ),
+                InlineKeyboardButton(
                     text="\u271d\ufe0f \u041d\u043e\u0432\u0438\u0439 \u0417\u0430\u0432\u0456\u0442",
                     callback_data="bible_testament:new",
-                )
+                ),
             ],
         ]
     )
+
 
 BOOKS_PAGE_SIZE = 10
 

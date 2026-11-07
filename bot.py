@@ -1,6 +1,8 @@
 """Telegram-бот щоденних літургійних читань."""
 from __future__ import annotations
 
+import sqlite3
+
 import asyncio
 import logging
 import re
@@ -16,6 +18,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from config import BOT_TOKEN, TELEGRAM_SAFE_MESSAGE_LENGTH
 from services.bible_service import BibleService
 from services.bible_navigation_service import BibleNavigationService
+from services.reading_progress_database import ReadingProgressDatabase
 from services.favorites_service import FavoritesService
 from services.message_service import MessageService
 from services.readings_service import ReadingsService
@@ -48,6 +51,7 @@ router = Router()
 readings_service = ReadingsService()
 bible_service = BibleService()
 bible_navigation_service = BibleNavigationService()
+reading_progress_db = ReadingProgressDatabase()
 subscription_service = SubscriptionService()
 favorites_service = FavoritesService()
 search_service = BibleSearchService()
@@ -530,6 +534,41 @@ async def bible_home_callback(callback: CallbackQuery) -> None:
 
 
 
+@router.callback_query(F.data == "bible_continue")
+async def bible_continue_callback(callback: CallbackQuery) -> None:
+    try:
+        if not callback.from_user:
+            raise ValueError("Missing Telegram user")
+
+        progress = reading_progress_db.get(callback.from_user.id)
+
+        if progress is None:
+            if callback.message:
+                await callback.message.edit_text(
+                    "\U0001f4da \u0412\u0438 \u0449\u0435 \u043d\u0435 \u0432\u0456\u0434\u043a\u0440\u0438\u0432\u0430\u043b\u0438 \u0431\u0456\u0431\u043b\u0456\u0439\u043d\u0438\u0445 \u0440\u043e\u0437\u0434\u0456\u043b\u0456\u0432.\\n"
+                    "\u041e\u0431\u0435\u0440\u0456\u0442\u044c \u0417\u0430\u0432\u0456\u0442, \u0449\u043e\u0431 \u043f\u043e\u0447\u0430\u0442\u0438 \u0447\u0438\u0442\u0430\u043d\u043d\u044f:",
+                    reply_markup=bible_testament_keyboard(),
+                )
+            await callback.answer()
+            return
+
+        original_data = callback.data
+        try:
+            callback.data = (
+                f"bible_chapter:{progress['book_id']}:{progress['chapter']}"
+            )
+            await bible_chapter_callback(callback)
+        finally:
+            callback.data = original_data
+
+    except Exception:
+        logger.exception("Failed to continue Bible reading")
+        await callback.answer(
+            "\u041d\u0435 \u0432\u0434\u0430\u043b\u043e\u0441\u044f \u043f\u0440\u043e\u0434\u043e\u0432\u0436\u0438\u0442\u0438 \u0447\u0438\u0442\u0430\u043d\u043d\u044f",
+            show_alert=True,
+        )
+
+
 @router.callback_query(F.data.startswith("bible_book:"))
 async def bible_book_callback(callback: CallbackQuery) -> None:
     try:
@@ -656,6 +695,18 @@ async def bible_chapter_callback(callback: CallbackQuery) -> None:
                 full_text,
                 reply_markup=keyboard,
             )
+
+            if callback.from_user:
+                try:
+                    reading_progress_db.save(
+                        callback.from_user.id,
+                        book_id,
+                        chapter,
+                    )
+                except sqlite3.Error:
+                    logger.exception(
+                        "Failed to save Bible reading progress"
+                    )
 
         await callback.answer()
 
