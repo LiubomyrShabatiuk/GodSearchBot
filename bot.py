@@ -552,14 +552,14 @@ async def bible_continue_callback(callback: CallbackQuery) -> None:
             await callback.answer()
             return
 
-        original_data = callback.data
-        try:
-            callback.data = (
-                f"bible_chapter:{progress['book_id']}:{progress['chapter']}"
-            )
-            await bible_chapter_callback(callback)
-        finally:
-            callback.data = original_data
+        chapter_callback = callback.model_copy(
+            update={
+                "data": (
+                    f"bible_chapter:{progress['book_id']}:{progress['chapter']}"
+                )
+            }
+        )
+        await bible_chapter_callback(chapter_callback)
 
     except Exception:
         logger.exception("Failed to continue Bible reading")
