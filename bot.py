@@ -19,6 +19,7 @@ from config import BOT_TOKEN, TELEGRAM_SAFE_MESSAGE_LENGTH
 from services.bible_service import BibleService
 from services.bible_navigation_service import BibleNavigationService
 from services.reading_progress_database import ReadingProgressDatabase
+from services.bible_bookmarks_database import BibleBookmarksDatabase
 from services.favorites_service import FavoritesService
 from services.message_service import MessageService
 from services.readings_service import ReadingsService
@@ -31,6 +32,7 @@ from ui.bible_keyboards import (
     bible_books_keyboard,
     bible_chapters_keyboard,
     bible_chapter_navigation_keyboard,
+    bible_bookmarks_keyboard,
 )
 from ui.psalter_keyboards import (
     psalter_list_keyboard,
@@ -52,6 +54,7 @@ readings_service = ReadingsService()
 bible_service = BibleService()
 bible_navigation_service = BibleNavigationService()
 reading_progress_db = ReadingProgressDatabase()
+bible_bookmarks_db = BibleBookmarksDatabase()
 subscription_service = SubscriptionService()
 favorites_service = FavoritesService()
 search_service = BibleSearchService()
@@ -663,6 +666,123 @@ async def bible_back_books_callback(callback: CallbackQuery) -> None:
 
 
 
+
+
+@router.callback_query(
+    (F.data == "bible_bookmarks")
+    | F.data.startswith("bible_bookmarks:")
+)
+async def bible_bookmarks_list_callback(callback: CallbackQuery) -> None:
+    try:
+        if not callback.from_user:
+            raise ValueError("Missing Telegram user")
+
+        parts = (callback.data or "").split(":")
+        if len(parts) == 1:
+            page = 0
+        elif len(parts) == 2:
+            page = int(parts[1])
+        else:
+            raise ValueError("Invalid bookmarks callback")
+
+        bookmarks = bible_bookmarks_db.get_all(
+            callback.from_user.id
+        )
+
+        for bookmark in bookmarks:
+            bookmark["name"] = bible_navigation_service.get_book_name(
+                bookmark["book_id"]
+            )
+
+        keyboard = bible_bookmarks_keyboard(bookmarks, page)
+
+        if bookmarks:
+            title = (
+                "\U0001f516 \u041c\u043e\u0457 \u0437\u0430\u043a\u043b\u0430\u0434\u043a\u0438"
+                f" ({len(bookmarks)})"
+            )
+        else:
+            title = (
+                "\U0001f516 \u0423 \u0432\u0430\u0441 \u0449\u0435 \u043d\u0435\u043c\u0430\u0454 "
+                "\u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u0438\u0445 "
+                "\u0431\u0456\u0431\u043b\u0456\u0439\u043d\u0438\u0445 "
+                "\u0440\u043e\u0437\u0434\u0456\u043b\u0456\u0432."
+            )
+
+        if callback.message:
+            await callback.message.edit_text(
+                title,
+                reply_markup=keyboard,
+            )
+
+        await callback.answer()
+
+    except (ValueError, TypeError, LookupError):
+        await callback.answer(
+            "Invalid bookmarks page",
+            show_alert=True,
+        )
+    except Exception:
+        logger.exception("Failed to display Bible bookmarks")
+        await callback.answer(
+            "\u041d\u0435 \u0432\u0434\u0430\u043b\u043e\u0441\u044f "
+            "\u0432\u0456\u0434\u043a\u0440\u0438\u0442\u0438 "
+            "\u0437\u0430\u043a\u043b\u0430\u0434\u043a\u0438",
+            show_alert=True,
+        )
+
+
+@router.callback_query(F.data.startswith("bible_bookmark:"))
+async def bible_bookmark_callback(callback: CallbackQuery) -> None:
+    try:
+        parts = (callback.data or "").split(":")
+        if len(parts) != 3 or not callback.from_user:
+            raise ValueError("Invalid bookmark callback")
+
+        book_id = int(parts[1])
+        chapter = int(parts[2])
+        user_id = callback.from_user.id
+
+        chapters = bible_navigation_service.get_chapters(book_id)
+        if chapter not in chapters:
+            raise ValueError("Invalid Bible chapter")
+
+        if bible_bookmarks_db.exists(user_id, book_id, chapter):
+            bible_bookmarks_db.remove(user_id, book_id, chapter)
+            is_bookmarked = False
+            notice = "\u274c \u0417\u0430\u043a\u043b\u0430\u0434\u043a\u0443 \u0432\u0438\u0434\u0430\u043b\u0435\u043d\u043e"
+        else:
+            bible_bookmarks_db.add(user_id, book_id, chapter)
+            is_bookmarked = True
+            notice = "\U0001f516 \u0417\u0430\u043a\u043b\u0430\u0434\u043a\u0443 \u0437\u0431\u0435\u0440\u0435\u0436\u0435\u043d\u043e"
+
+        keyboard = bible_chapter_navigation_keyboard(
+            book_id,
+            chapter,
+            len(chapters),
+            is_bookmarked=is_bookmarked,
+        )
+
+        if callback.message:
+            await callback.message.edit_reply_markup(
+                reply_markup=keyboard,
+            )
+
+        await callback.answer(notice)
+
+    except (ValueError, TypeError):
+        await callback.answer(
+            "Invalid Bible bookmark",
+            show_alert=True,
+        )
+    except Exception:
+        logger.exception("Failed to update Bible bookmark")
+        await callback.answer(
+            "\u041d\u0435 \u0432\u0434\u0430\u043b\u043e\u0441\u044f \u043e\u043d\u043e\u0432\u0438\u0442\u0438 \u0437\u0430\u043a\u043b\u0430\u0434\u043a\u0443",
+            show_alert=True,
+        )
+
+
 @router.callback_query(F.data.startswith("bible_chapter:"))
 async def bible_chapter_callback(callback: CallbackQuery) -> None:
     try:
@@ -679,10 +799,23 @@ async def bible_chapter_callback(callback: CallbackQuery) -> None:
             chapter,
         )
 
+        is_bookmarked = False
+
+        if callback.from_user:
+            try:
+                is_bookmarked = bible_bookmarks_db.exists(
+                    callback.from_user.id,
+                    book_id,
+                    chapter,
+                )
+            except sqlite3.Error:
+                logger.exception("Failed to check Bible bookmark")
+
         keyboard = bible_chapter_navigation_keyboard(
             book_id,
             chapter,
             len(chapters),
+            is_bookmarked=is_bookmarked,
         )
 
         book_name = bible_navigation_service.get_book_name(book_id)

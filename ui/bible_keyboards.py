@@ -14,6 +14,12 @@ def bible_testament_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    text="\U0001f516 \u041c\u043e\u0457 \u0437\u0430\u043a\u043b\u0430\u0434\u043a\u0438",
+                    callback_data="bible_bookmarks",
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="\U0001f4dc \u0421\u0442\u0430\u0440\u0438\u0439 \u0417\u0430\u0432\u0456\u0442",
                     callback_data="bible_testament:old",
                 ),
@@ -155,6 +161,7 @@ def bible_chapter_navigation_keyboard(
     book_id: int,
     chapter: int,
     total_chapters: int,
+    is_bookmarked: bool = False,
 ) -> InlineKeyboardMarkup:
     if not 1 <= chapter <= total_chapters:
         raise ValueError("Invalid chapter")
@@ -184,8 +191,86 @@ def bible_chapter_navigation_keyboard(
 
     rows.append([
         InlineKeyboardButton(
+            text=(
+                "\u274c \u0412\u0438\u0434\u0430\u043b\u0438\u0442\u0438 \u0437\u0430\u043a\u043b\u0430\u0434\u043a\u0443"
+                if is_bookmarked
+                else "\U0001f516 \u0417\u0431\u0435\u0440\u0435\u0433\u0442\u0438 \u0437\u0430\u043a\u043b\u0430\u0434\u043a\u0443"
+            ),
+            callback_data=f"bible_bookmark:{book_id}:{chapter}",
+        )
+    ])
+
+    rows.append([
+        InlineKeyboardButton(
             text="\U0001f4da \u0414\u043e \u0441\u043f\u0438\u0441\u043a\u0443 \u0440\u043e\u0437\u0434\u0456\u043b\u0456\u0432",
             callback_data=f"bible_chapters:{book_id}:{(chapter - 1) // 25}",
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+BOOKMARKS_PAGE_SIZE = 10
+
+
+def bible_bookmarks_keyboard(
+    bookmarks: list[dict],
+    page: int = 0,
+) -> InlineKeyboardMarkup:
+    total_pages = max(
+        1,
+        (len(bookmarks) + BOOKMARKS_PAGE_SIZE - 1)
+        // BOOKMARKS_PAGE_SIZE,
+    )
+
+    if not 0 <= page < total_pages:
+        raise ValueError("Invalid bookmarks page")
+
+    start = page * BOOKMARKS_PAGE_SIZE
+    visible = bookmarks[start:start + BOOKMARKS_PAGE_SIZE]
+
+    rows = []
+
+    for bookmark in visible:
+        rows.append([
+            InlineKeyboardButton(
+                text=(
+                    f"\U0001f4d6 {bookmark['name']} "
+                    f"\u2014 {bookmark['chapter']}"
+                ),
+                callback_data=(
+                    f"bible_chapter:"
+                    f"{bookmark['book_id']}:"
+                    f"{bookmark['chapter']}"
+                ),
+            )
+        ])
+
+    navigation = []
+
+    if page > 0:
+        navigation.append(
+            InlineKeyboardButton(
+                text="\u2b05\ufe0f",
+                callback_data=f"bible_bookmarks:{page - 1}",
+            )
+        )
+
+    if page < total_pages - 1:
+        navigation.append(
+            InlineKeyboardButton(
+                text="\u27a1\ufe0f",
+                callback_data=f"bible_bookmarks:{page + 1}",
+            )
+        )
+
+    if navigation:
+        rows.append(navigation)
+
+    rows.append([
+        InlineKeyboardButton(
+            text="\u2b05\ufe0f \u0414\u043e \u043c\u0435\u043d\u044e \u0411\u0456\u0431\u043b\u0456\u0457",
+            callback_data="bible_home",
         )
     ])
 
